@@ -83,7 +83,7 @@
     if (self = [super init]) {
         _audioConfiguration = audioConfiguration;
         _videoConfiguration = videoConfiguration;
-        _adaptiveBitrate = NO;
+        _adaptiveBitrate = YES;
         _captureType = captureType;
     }
     return self;
@@ -198,19 +198,26 @@
 
 - (void)socketBufferStatus:(nullable id<LFStreamSocket>)socket status:(LFLiveBuffferState)status {
     if((self.captureType & LFLiveCaptureMaskVideo || self.captureType & LFLiveInputMaskVideo) && self.adaptiveBitrate){
-        NSUInteger videoBitRate = [self.videoEncoder videoBitRate];
-        if (status == LFLiveBuffferDecline) {
-            if (videoBitRate < _videoConfiguration.videoMaxBitRate) {
-                videoBitRate = videoBitRate + 50 * 1000;
-                [self.videoEncoder setVideoBitRate:videoBitRate];
-                NSLog(@"Increase bitrate %@", @(videoBitRate));
-            }
-        } else {
-            if (videoBitRate > self.videoConfiguration.videoMinBitRate) {
-                videoBitRate = videoBitRate - 100 * 1000;
-                [self.videoEncoder setVideoBitRate:videoBitRate];
-                NSLog(@"Decline bitrate %@", @(videoBitRate));
-            }
+        NSInteger videoBr = [self.videoEncoder videoBitRate];
+        NSInteger vector = (status == LFLiveBuffferDecline) ? 1 : -1;
+        NSInteger fourmb = 4000000;
+        NSInteger kMinVideoBitrate = 32000;
+    
+        if(videoBr > 1152000) {
+            [self.videoEncoder setVideoBitRate:MIN((videoBr / 384000 + vector ) * 384000, fourmb)];
+        }
+        else if( videoBr > 512000 ) {
+            [self.videoEncoder setVideoBitRate:MIN((videoBr / 128000 + vector ) * 128000, fourmb)];
+        }
+        else if( videoBr > 128000 ) {
+            [self.videoEncoder setVideoBitRate:MIN((videoBr / 64000 + vector ) * 64000, fourmb)];
+        }
+        else {
+            [self.videoEncoder setVideoBitRate:MIN(MAX((videoBr / 32000 + vector ) * 32000, kMinVideoBitrate), fourmb)];
+        }
+        //NSLog(@"(%ld) VideoBR: %ld", (long)vector, (long)[self.videoEncoder videoBitRate]);
+        if (self.delegate && [self.delegate respondsToSelector:@selector(liveSession:vector:videoBitrate:)]) {
+            [self.delegate liveSession:self vector:vector videoBitrate:[self.videoEncoder videoBitRate]];
         }
     }
 }
